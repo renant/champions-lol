@@ -6,6 +6,8 @@
     "serve": "firebase emulators:start --only functions",
     "shell": "firebase functions:shell",
     "start": "npm run shell",
+    "deployfetchLolChampion": "firebase deploy --only functions:fetchLolChampion",
+    "deployfetchLolChampions": "firebase deploy --only functions:fetchLolChampions",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
@@ -14,6 +16,7 @@
   },
   "main": "index.js",
   "dependencies": {
+    "@google-cloud/pubsub": "^2.5.0",
     "cheerio": "^1.0.0-rc.3",
     "firebase-admin": "^8.10.0",
     "firebase-functions": "^3.6.1",

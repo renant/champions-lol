@@ -2,27 +2,21 @@ const functions = require('firebase-functions');
 const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 const firebaseAdmin = require('firebase-admin');
+const { PubSub } = require('@google-cloud/pubsub');
 
 firebaseAdmin.initializeApp();
 const db = firebaseAdmin.database();
 
-const opGGBaseUrl = "https://br.op.gg/";
-const opGGChampions = `${opGGBaseUrl}/champion/statistics`;
-const championById = (id) => `https://www.leagueofgraphs.com/pt/champions/counters/${id}`;
-const championMainContentById = (id) => `https://www.leagueofgraphs.com/pt/champions/builds/${id}`;
+const championsUrl = `https://www.leagueofgraphs.com/`;
+const championById = (id) => `${championsUrl}/pt/champions/counters/${id}`;
+const championMainContentById = (id) => `${championsUrl}/pt/champions/builds/${id}`;
 
-exports.fetchLolChampion = functions.https.onRequest(async (request, response) => {
-  const { id } = request.query
 
-  if (!id) {
-    response.status(400).json({ message: 'Missing id query param' })
-    return;
-  }
 
+async function fetchLolChampion(id) {
   const data = await fetch(championById(id))
   if (!data.ok) {
-    response.status(404).json({ message: 'Champion not found' })
-    return;
+    throw new Error('Champion not found')
   }
 
   const dataMain = await fetch(championMainContentById(id));
@@ -36,19 +30,16 @@ exports.fetchLolChampion = functions.https.onRequest(async (request, response) =
   const $ = cheerio.load(html);
   const $main = cheerio.load(htmlMain)
 
-  // const imageUrl = $('.champion-stats-header-info__image img').attr('src');
   let winRate = $main('#graphDD2').text();
+  const imageUrl = $main('.pageBanner div img').attr('src');
 
   if (winRate) {
     winRate = parseFloat(winRate.trim());
   }
 
-  // const pickRate = $('.champion-stats-trend-rate').last().text();
-
-  // console.log(html);
-
   const champion = {
     id,
+    imageUrl,
     winRate,
     winner: {},
     losses: {},
@@ -56,9 +47,9 @@ exports.fetchLolChampion = functions.https.onRequest(async (request, response) =
   }
 
 
-  $('.box').map((index, el) => {
+  $('.box').each((index, el) => {
 
-    $(el).find('tr').map((_, matchChampion) => {
+    $(el).find('tr').each((_, matchChampion) => {
       var matchChampionElement = $(matchChampion).find('td a');
 
       const id = matchChampionElement.attr('href');
@@ -86,44 +77,60 @@ exports.fetchLolChampion = functions.https.onRequest(async (request, response) =
       }
     })
 
-  }).toArray();
-
-  const championsRef = db.ref('/champions').child(id);
-  await championsRef.update(champion);
-
-  response.json({
-    champion
   });
 
-});
+  return champion;
+}
 
-exports.fetchLolChampions = functions.https.onRequest(async (_, response) => {
-  const data = await fetch(opGGChampions)
+const fetchLolChampionTopic = 'fetch-lol-champion-topic';
+exports.fetchLolChampion = functions.pubsub.topic(fetchLolChampionTopic)
+  .onPublish(async (msg) => {
+    try {
+      const { id } = msg.json
+      const champion = await fetchLolChampion(id);
+      const championsRef = db.ref('/champions').child(id);
+      await championsRef.update(champion);
+    } catch (err) {
+      console.error(err)
+    }
+  })
+
+
+exports.fetchLolChampions = functions.pubsub.schedule('0 6 * * *').onRun(async (context) => {
+  //exports.fetchLolChampions = functions.https.onRequest(async (_, response) => {
+  const data = await fetch(championsUrl)
   const html = await data.text();
   const $ = cheerio.load(html);
 
-  const champions = $('.champion-index__champion-item').map((_, el) => {
-    const name = $(el).find('.champion-index__champion-item__name').text();
-    const id = $(el).attr('data-champion-key');
-    const lanes = $(el).find('.champion-index__champion-item__positions').text();
+  const champions = $('.championBox').map((_, el) => {
+    const id = $(el).find('a').attr('href');
+    const name = $(el).find('.championName').text().trim();
 
-    //const id = name.toLowerCase().replace(' ', '');
     return {
-      id,
-      name,
-      lanes: lanes.replace(/(\r\n|\n|\r)/gm, "").match(/[A-Z][a-z]+/g)
+      id: id.split('/').pop(),
+      name
     }
   }).toArray();
 
   const championsMap = {}
-  champions.forEach(hero => {
-    Object.keys(hero).forEach(attr => {
-      championsMap[`${hero.id}/${attr}`] = hero[attr]
+  champions.forEach(champion => {
+    Object.keys(champion).forEach(attr => {
+      championsMap[`${champion.id}/${attr}`] = champion[attr]
     })
+  })
+
+
+  const pubSub = new PubSub({
+    projectId: process.env.GCLOUD_PROJECT
+  })
+
+  const publishPromises = champions.map(champion => {
+    return pubSub.topic(fetchLolChampionTopic).publishJSON({ id: champion.id });
   })
 
   const championsRef = db.ref('/champions');
   await championsRef.update(championsMap);
+  await Promise.all(publishPromises);
 
   response.json({ championsMap });
 });
