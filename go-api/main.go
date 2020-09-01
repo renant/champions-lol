@@ -149,17 +149,8 @@ func main() {
 			return
 		}
 
-		championsLosses := make([]ChampionCounter, 0, len(data.Losses))
+		chapionsIds := make([]string, 0, len(data.Losses))
 		for _, champion := range data.Losses {
-			championsLosses = append(championsLosses, champion)
-		}
-
-		sort.Slice(championsLosses, func(i, j int) bool {
-			return championsLosses[i].WinRate < championsLosses[j].WinRate
-		})
-
-		chapionsIds := make([]string, 0, 3)
-		for _, champion := range championsLosses[0:3] {
 			chapionsIds = append(chapionsIds, champion.ID)
 		}
 
@@ -169,16 +160,25 @@ func main() {
 			return
 		}
 
-		champions := make([]Champion, 0, 3)
+		champions := make([]Champion, 0, len(loadChampions))
 		for _, champion := range loadChampions {
-			champion.WinRate = champion.Winner[championID].WinRate
+			champion.WinRate = (data.Losses[champion.ID].WinRate - 100) * -1
 			champion.Losses = nil
 			champion.WellWith = nil
 			champion.Winner = nil
 			champions = append(champions, champion)
 		}
 
-		c.Status(200).JSON(champions)
+		championsLosses := make([]Champion, 0, len(champions))
+		for _, champion := range champions {
+			championsLosses = append(championsLosses, champion)
+		}
+
+		sort.Slice(championsLosses, func(i, j int) bool {
+			return championsLosses[i].WinRate > championsLosses[j].WinRate
+		})
+
+		c.Status(200).JSON(championsLosses[0:3])
 	})
 
 	app.Listen(port)

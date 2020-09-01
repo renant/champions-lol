@@ -1,10 +1,12 @@
-FROM golang:1.12 as builder
+FROM golang:1.12 as build-env
 
-WORKDIR /go/app
-COPY . .
+WORKDIR /go/src/app
+ADD . /go/src/app
 
-RUN CGO_ENABLED=0 GOOS=linux go build -v -o app main.go
+RUN go get -d -v ./...
+
+RUN go build -o /go/bin/app
 
 FROM gcr.io/distroless/base
-COPY --from=builder /go/app/app /app
+COPY --from=build-env /go/bin/app /
 CMD ["/app"]
