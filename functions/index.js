@@ -3,6 +3,7 @@ const fetch = require('node-fetch');
 const cheerio = require('cheerio');
 const firebaseAdmin = require('firebase-admin');
 const { PubSub } = require('@google-cloud/pubsub');
+const { WebhookClient } = require('dialogflow-fulfillment');
 
 firebaseAdmin.initializeApp();
 const db = firebaseAdmin.database();
@@ -39,6 +40,7 @@ async function fetchLolChampion(id) {
 
   const champion = {
     id,
+    lastUpdate: Date.now(),
     imageUrl,
     winRate,
     winner: {},
@@ -131,6 +133,87 @@ exports.fetchLolChampions = functions.pubsub.schedule('0 6 * * *').onRun(async (
   const championsRef = db.ref('/champions');
   await championsRef.update(championsMap);
   await Promise.all(publishPromises);
+});
 
-  response.json({ championsMap });
+
+function joinOr(names, joiner = 'ou') {
+  if (names.length === 0) {
+    return 0
+  }
+
+  if (names.length === 1) {
+    return names[0]
+  }
+
+  if (names.length === 2) {
+    return names.join(` ${joiner} `)
+  }
+
+  if (names.length > 2) {
+    const firstNames = names.slice(0, -1)
+    const lastName = names[names.length - 1]
+    return firstNames.join(', ') + ` ${joiner} ` + lastName
+  }
+}
+
+function pickOne(list) {
+  const max = list.length
+  const pick = Math.floor(Math.random() * max)
+  return list[pick]
+}
+
+exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, response) => {
+  const agent = new WebhookClient({ request, response });
+  console.log('Dialogflow Request headers: ' + JSON.stringify(request.headers));
+  console.log('Dialogflow Request body: ' + JSON.stringify(request.body));
+
+  function welcome(agent) {
+    agent.add(`Welcome to my agent!`);
+  }
+
+  function fallback(agent) {
+    agent.add(`I didn't understand`);
+    agent.add(`I'm sorry, can you try again?`);
+  }
+  /**
+ * Best Champion Intent
+ * @param {WebhookClient} agent
+ */
+  async function bestChampionHandler(agent) {
+    const { champion } = agent.parameters
+
+    async function loadChampion(id) {
+      const championsRef = db.ref('/champions');
+      const championSnap = await championsRef.child(id).once('value');
+      return await championSnap.val();
+    }
+
+    const championData = await loadChampion(champion);
+
+    if (!champion) {
+      agent.add('Desculpe, não encontrei esse campeão');
+      return;
+    }
+
+    const losses = Object.values(championData.losses)
+      .sort((a, b) => { return a.winRate - b.winRate })
+      .slice(0, 3)
+      .map(x => x.name);
+
+    agent.add(pickOne([
+      `Humm, você poderia escolher ${joinOr(losses)}`,
+      `Escolher entre  ${joinOr(losses)} vão aumentar suas chances de vitória`,
+      `Boas escolhas seriam ${joinOr(losses)}`,
+      `Olhando as últimas partidas  ${joinOr(losses)} seriam boas escolhas`,
+      `Se escolher ${joinOr(losses)} você vai ter boas chances`,
+      `Escolha  ${joinOr(losses)} e tenha um bom jogo!`
+    ]))
+  }
+
+  let intentMap = new Map();
+  intentMap.set('Default Welcome Intent', welcome);
+  intentMap.set('Default Fallback Intent', fallback);
+  intentMap.set('BestChampion', bestChampionHandler)
+
+  agent.handleRequest(intentMap);
 });
