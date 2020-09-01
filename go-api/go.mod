@@ -11,6 +11,7 @@ require (
 	github.com/fatih/color v1.9.0 // indirect
 	github.com/gofiber/fiber v1.14.4
 	github.com/imdario/mergo v0.3.11 // indirect
+	github.com/joho/godotenv v1.3.0
 	github.com/pelletier/go-toml v1.8.0 // indirect
 	github.com/ramya-rao-a/go-outline v0.0.0-20200117021646-2a048b4510eb // indirect
 	golang.org/x/sys v0.0.0-20200831180312-196b9ba8737a // indirect
