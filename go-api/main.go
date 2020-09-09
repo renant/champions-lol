@@ -4,6 +4,7 @@ import (
 	"log"
 	"os"
 
+	"github.com/gofiber/cors"
 	"github.com/gofiber/fiber"
 	"github.com/joho/godotenv"
 	"github.com/renant/lol-api/controllers"
@@ -21,13 +22,15 @@ func main() {
 
 	app := fiber.New()
 
+	app.Use(cors.New())
+
 	port := "3000"
 	if envPort := os.Getenv("PORT"); envPort != "" {
 		port = envPort
 	}
 
 	app.Get("/", func(c *fiber.Ctx) {
-		c.Send("Hello!")
+		c.Send("Bora jogar lolzinho!")
 	})
 
 	app.Get("/champion/:championID", controllers.GetChampionById)
