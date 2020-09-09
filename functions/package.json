@@ -9,6 +9,7 @@
     "deployfetchLolChampion": "firebase deploy --only functions:fetchLolChampion",
     "deployfetchLolChampions": "firebase deploy --only functions:fetchLolChampions",
     "deploydialogflowFirebaseFulfillment": "firebase deploy --only functions:dialogflowFirebaseFulfillment",
+    "deployalexaSkill": "firebase deploy --only functions:alexaSkill",
     "deploy": "firebase deploy --only functions",
     "logs": "firebase functions:log"
   },
@@ -19,6 +20,10 @@
   "dependencies": {
     "@google-cloud/pubsub": "^2.5.0",
     "actions-on-google": "^2.13.0",
+    "ask-sdk-core": "^2.7.0",
+    "ask-sdk-express-adapter": "^2.1.0",
+    "ask-sdk-model": "^1.19.0",
+    "aws-sdk": "^2.326.0",
     "cheerio": "^1.0.0-rc.3",
     "dialogflow-fulfillment": "^0.6.1",
     "firebase-admin": "^8.10.0",

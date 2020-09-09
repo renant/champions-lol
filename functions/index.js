@@ -4,6 +4,7 @@ const cheerio = require('cheerio');
 const firebaseAdmin = require('firebase-admin');
 const { PubSub } = require('@google-cloud/pubsub');
 const { WebhookClient } = require('dialogflow-fulfillment');
+const { SkillRequestSignatureVerifier, TimestampVerifier } = require('ask-sdk-express-adapter');
 
 firebaseAdmin.initializeApp();
 const db = firebaseAdmin.database();
@@ -181,33 +182,9 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
  */
   async function bestChampionHandler(agent) {
     const { champion } = agent.parameters
-
-    async function loadChampion(id) {
-      const championsRef = db.ref('/champions');
-      const championSnap = await championsRef.child(id).once('value');
-      return await championSnap.val();
-    }
-
-    const championData = await loadChampion(champion);
-
-    if (!champion) {
-      agent.add('Desculpe, não encontrei esse campeão');
-      return;
-    }
-
-    const losses = Object.values(championData.losses)
-      .sort((a, b) => { return a.winRate - b.winRate })
-      .slice(0, 3)
-      .map(x => x.name);
-
-    agent.add(pickOne([
-      `Humm, você poderia escolher ${joinOr(losses)}`,
-      `Escolher entre  ${joinOr(losses)} vão aumentar suas chances de vitória`,
-      `Boas escolhas seriam ${joinOr(losses)}`,
-      `Olhando as últimas partidas  ${joinOr(losses)} seriam boas escolhas`,
-      `Se escolher ${joinOr(losses)} você vai ter boas chances`,
-      `Escolha  ${joinOr(losses)} e tenha um bom jogo!`
-    ]))
+    const bestChoiceResponse = await returnBestChoicesById(champion);
+    // agent.add(bestChoiceResponse);
+    agent.end(bestChoiceResponse);
   }
 
   let intentMap = new Map();
@@ -217,3 +194,93 @@ exports.dialogflowFirebaseFulfillment = functions.https.onRequest((request, resp
 
   agent.handleRequest(intentMap);
 });
+
+async function loadChampion(id) {
+  const championsRef = db.ref('/champions');
+  const championSnap = await championsRef.child(id).once('value');
+  return await championSnap.val();
+}
+
+async function returnBestChoicesById(championId) {
+  const champion = await loadChampion(championId);
+
+  if (!champion) {
+    return 'Desculpe, não encontrei esse campeão';
+  }
+
+  const losses = Object.values(champion.losses)
+    .sort((a, b) => { return a.winRate - b.winRate })
+    .slice(0, 3)
+    .map(x => x.name);
+
+  return pickOne([
+    `Humm, você poderia escolher ${joinOr(losses)}`,
+    `Escolher entre  ${joinOr(losses)} vão aumentar suas chances de vitória`,
+    `Boas escolhas seriam ${joinOr(losses)}`,
+    `Olhando as últimas partidas  ${joinOr(losses)} seriam boas escolhas`,
+    `Se escolher ${joinOr(losses)} você vai ter boas chances`,
+    `Escolha  ${joinOr(losses)} e tenha um bom jogo!`
+  ])
+}
+
+exports.alexaSkill = functions.https.onRequest(async (request, response) => {
+  try {
+    const textBody = request.rawBody.toString()
+    await new SkillRequestSignatureVerifier().verify(textBody, request.headers);
+    await new TimestampVerifier().verify(textBody);
+  } catch (err) {
+    // server return err message
+    response.send(403, JSON.stringify(err))
+  }
+
+
+  console.log("REUQESTBODY: " + JSON.stringify(request.body));
+  const result = await getAlexaResponse(request.body.request);
+  console.log("RESPOSTE: " + JSON.stringify(result));
+  response.send(result);
+})
+
+const getAlexaResponse = async (request) => {
+  const { type } = request;
+  let name = "";
+  let slots = "";
+
+  if (request.intent) {
+    name = request.intent.name;
+    slots = request.intent.slots;
+  }
+
+  var AlexaDefaultAnswer = {
+    "version": "1.0",
+    "response": {
+      "outputSpeech": {
+        "type": "PlainText",
+        "text": "Bora jogar um lolzinho! Você pode me perguntar contra que campeão jogar, ou pedir ajuda"
+      },
+      "shouldEndSession": false,
+      "card": {
+        "type": "Simple",
+        "text": "Bora jogar um lolzinho!",
+      }
+    }
+  }
+
+  if (type === 'LaunchRequest') {
+    return AlexaDefaultAnswer;
+  } else if (type === 'IntentRequest' && name === 'BestChampionIntent' && slots.Champion.resolutions) {
+    AlexaDefaultAnswer.response.outputSpeech.text = await returnBestChoicesById(slots.Champion.resolutions.resolutionsPerAuthority[0].values[0].value.id);
+    AlexaDefaultAnswer.response.shouldEndSession = true;
+    return AlexaDefaultAnswer;
+  } else if (type === 'IntentRequest' && (name === "AMAZON.CancelIntent" || name === "AMAZON.StopIntent")) {
+    AlexaDefaultAnswer.response.outputSpeech.text = "Espero você para próxima partida, até mais";
+    AlexaDefaultAnswer.response.shouldEndSession = true;
+    return AlexaDefaultAnswer;
+  } else if (type === 'IntentRequest' && name === "AMAZON.HelpIntent") {
+    AlexaDefaultAnswer.response.outputSpeech.text = "Você pode perguntar, 'O que devo escolher contra Draven?'";
+    return AlexaDefaultAnswer;
+  } else {
+    AlexaDefaultAnswer.response.outputSpeech.text = "Desculpe, lol rank ainda não pode entender isso";
+    return AlexaDefaultAnswer;
+  }
+
+};
