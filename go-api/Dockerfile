@@ -1,12 +1,19 @@
-FROM golang:1.12 as build-env
+# Use the offical Golang image to create a build artifact.
+# This is based on Debian and sets the GOPATH to /go.
+# https://hub.docker.com/_/golang
+FROM golang:1.12 as builder
 
-WORKDIR /go/src/app
-ADD . /go/src/app
+# Copy local code to the container image.
+WORKDIR /go/app
+COPY . .
 
-RUN go get -d -v ./...
+# Build the command inside the container.
+# (You may fetch or manage dependencies here,
+# either manually or with a tool like "godep".)
+RUN CGO_ENABLED=0 GOOS=linux go build -v -o app main.go
 
-RUN go build -o /go/bin/app
-
+# Use a Docker multi-stage build to create a lean production image.
+# https://docs.docker.com/develop/develop-images/multistage-build/#use-multi-stage-builds
 FROM gcr.io/distroless/base
-COPY --from=build-env /go/bin/app /
+COPY --from=builder /go/app/app /app
 CMD ["/app"]
