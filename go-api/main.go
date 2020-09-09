@@ -6,6 +6,8 @@ import (
 
 	"github.com/gofiber/cors"
 	"github.com/gofiber/fiber"
+	"github.com/gofiber/logger"
+	"github.com/gofiber/recover"
 	"github.com/joho/godotenv"
 	"github.com/renant/lol-api/controllers"
 	"github.com/renant/lol-api/database"
@@ -23,6 +25,13 @@ func main() {
 	app := fiber.New()
 
 	app.Use(cors.New())
+	app.Use(logger.New())
+	cfg := recover.Config{
+		Handler: func(c *fiber.Ctx, err error) {
+			c.Status(500).JSON(map[string]string{"message": err.Error()})
+		},
+	}
+	app.Use(recover.New(cfg))
 
 	port := "3000"
 	if envPort := os.Getenv("PORT"); envPort != "" {
